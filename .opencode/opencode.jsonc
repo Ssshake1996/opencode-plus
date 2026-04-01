@@ -1,5 +1,15 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    [
+      "../packages/context-plugin/src/index.ts",
+      {
+        "toolResultMaxTokens": 1200,
+        "minMessages": 10,
+        "replaceCompactionPrompt": true,
+      },
+    ],
+  ],
   "provider": {
     "opencode": {
       "options": {},

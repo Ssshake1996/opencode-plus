@@ -8,7 +8,7 @@ import {
   relevanceToLevel,
   type CompressionLevel,
   type Turn,
-} from "@ssshake/context-core"
+} from "../../context-core/src/index.ts"
 
 type ContextCompressionOptions = {
   enabled?: boolean
