@@ -187,7 +187,7 @@ export async function convertToOpenAIResponsesInput({
                 provider: "copilot",
                 providerOptions: part.providerOptions,
                 schema: openaiResponsesReasoningProviderOptionsSchema,
-              })
+              }) as OpenAIResponsesReasoningProviderOptions | undefined
 
               const reasoningId = providerOptions?.itemId
 

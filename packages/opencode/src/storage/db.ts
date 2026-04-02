@@ -84,14 +84,12 @@ export namespace Database {
 
   function ensureSessionContextColumns(db: ReturnType<typeof init>) {
     const client = db.$client
-    const hasSessionTable = client
-      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'")
-      .get()
+    const hasSessionTable = client.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'").get() as
+      | { name: string }
+      | null
     if (!hasSessionTable) return
 
-    const columns = client
-      .query<{ name: string }>("PRAGMA table_info(session)")
-      .all()
+    const columns = (client.query("PRAGMA table_info(session)").all() as Array<{ name: string }>)
       .map((row) => row.name)
     const names = new Set(columns)
 

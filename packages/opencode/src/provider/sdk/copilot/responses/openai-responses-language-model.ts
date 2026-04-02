@@ -128,6 +128,17 @@ const LOGPROBS_SCHEMA = z.array(
   }),
 )
 
+type OpenAIResponsesGenerateResponse = {
+  id: string
+  created_at: number
+  error?: { code: string; message: string } | null
+  model: string
+  output: any[]
+  service_tier?: string | null
+  incomplete_details?: { reason: string } | null
+  usage: any
+}
+
 export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
   readonly specificationVersion = "v3"
 
@@ -193,11 +204,11 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
       warnings.push({ type: "unsupported", feature: "stopSequences" })
     }
 
-    const openaiOptions = await parseProviderOptions({
+    const openaiOptions = (await parseProviderOptions({
       provider: "copilot",
       providerOptions,
       schema: openaiResponsesProviderOptionsSchema,
-    })
+    })) as OpenAIResponsesProviderOptions | undefined
 
     const { input, warnings: inputWarnings } = await convertToOpenAIResponsesInput({
       prompt,
@@ -399,7 +410,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
 
     const {
       responseHeaders,
-      value: response,
+      value: rawResponseValue,
       rawValue: rawResponse,
     } = await postJsonToApi({
       url,
@@ -492,6 +503,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
       abortSignal: options.abortSignal,
       fetch: this.config.fetch,
     })
+    const response = rawResponseValue as OpenAIResponsesGenerateResponse
 
     if (response.error) {
       throw new APICallError({
@@ -686,7 +698,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
             result: {
               queries: part.queries,
               results:
-                part.results?.map((result) => ({
+                part.results?.map((result: { attributes: unknown; file_id: string; filename: string; score: number; text: string }) => ({
                   attributes: result.attributes as Record<string, JSONValue>,
                   fileId: result.file_id,
                   filename: result.filename,
@@ -777,7 +789,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
   async doStream(options: LanguageModelV3CallOptions) {
     const { args: body, warnings, webSearchToolName } = await this.getArgs(options)
 
-    const { responseHeaders, value: response } = await postJsonToApi({
+    const { responseHeaders, value: rawResponseStream } = await postJsonToApi({
       url: this.config.url({
         path: "/responses",
         modelId: this.modelId,
@@ -792,6 +804,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
       abortSignal: options.abortSignal,
       fetch: this.config.fetch,
     })
+    const response = rawResponseStream as ReadableStream<ParseResult<z.infer<typeof openaiResponsesChunkSchema>>>
 
     const self = this
 

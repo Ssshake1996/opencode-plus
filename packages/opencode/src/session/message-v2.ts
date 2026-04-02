@@ -110,6 +110,7 @@ export namespace MessageV2 {
   export const TextPart = PartBase.extend({
     type: z.literal("text"),
     text: z.string(),
+    sem_type: z.string().optional(),
     synthetic: z.boolean().optional(),
     ignored: z.boolean().optional(),
     time: z

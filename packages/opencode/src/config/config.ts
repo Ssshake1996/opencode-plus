@@ -1493,10 +1493,10 @@ export namespace Config {
           }
 
           if (Flag.OPENCODE_DISABLE_AUTOCOMPACT) {
-            result.compaction = { ...result.compaction, auto: false }
+            result.compaction = { ...(result.compaction ?? {}), auto: false } as NonNullable<Info["compaction"]>
           }
           if (Flag.OPENCODE_DISABLE_PRUNE) {
-            result.compaction = { ...result.compaction, prune: false }
+            result.compaction = { ...(result.compaction ?? {}), prune: false } as NonNullable<Info["compaction"]>
           }
 
           result.plugin = deduplicatePlugins(result.plugin ?? [])

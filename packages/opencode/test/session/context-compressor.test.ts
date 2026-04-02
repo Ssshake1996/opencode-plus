@@ -1,18 +1,35 @@
 import { describe, expect, test } from "bun:test"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionID, MessageID, PartID } from "../../src/session/schema"
+import { ModelID, ProviderID } from "../../src/provider/schema"
 import {
   TurnClassifier,
   SEM_TYPES,
   TopicGrouper,
-  Topic,
   computeRelevance,
   relevanceToLevel,
   SmartCompressor,
   ContextAssembler,
   type CompressionLevel,
   type ArchivedTopicData,
+  type Topic,
 } from "../../src/session/context-compressor"
+
+const compactionConfig = {
+  context_max_chars: 0,
+  level_full: 0.7,
+  level_summary: 0.3,
+  level_title: 0.1,
+  weight_keyword: 0.5,
+  weight_recall: 0.3,
+  weight_decay: 0.2,
+  archive_threshold: 30,
+  archive_manual_threshold: 6,
+  decay_half_life_hours: 24,
+  max_gap_turns: 6,
+  max_kw: 8,
+  hard_cap_turns: 50,
+} as const
 
 // Helper to create mock turns
 function createTurn(
@@ -22,16 +39,39 @@ function createTurn(
   time?: number,
 ): MessageV2.WithParts {
   const id = MessageID.ascending()
-  const sessionID = SessionID.generate()
+  const sessionID = SessionID.descending()
+  const model = { providerID: ProviderID.make("test"), modelID: ModelID.make("test") }
+  const info: MessageV2.Info =
+    role === "user"
+      ? {
+          id,
+          sessionID,
+          role,
+          agent: "build",
+          model,
+          time: { created: time || Date.now() },
+        }
+      : {
+          id,
+          sessionID,
+          role,
+          parentID: MessageID.ascending(),
+          modelID: model.modelID,
+          providerID: model.providerID,
+          mode: "primary",
+          agent: "build",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: time || Date.now() },
+        }
   return {
-    info: {
-      id,
-      sessionID,
-      role,
-      agent: "build",
-      model: { providerID: "test", modelID: "test" },
-      time: { created: time || Date.now() },
-    },
+    info,
     parts: [
       {
         id: PartID.ascending(),
@@ -248,19 +288,19 @@ describe("context-compressor.relevance", () => {
   describe("computeRelevance", () => {
     test("high relevance for keyword match", () => {
       const topic = createTopic()
-      const score = computeRelevance(topic, "帮我修改排序函数", {})
+      const score = computeRelevance(topic, "帮我修改排序函数", compactionConfig)
       expect(score).toBeGreaterThan(0.5)
     })
 
     test("low relevance for unrelated query", () => {
       const topic = createTopic()
-      const score = computeRelevance(topic, "今天的天气怎么样", {})
+      const score = computeRelevance(topic, "今天的天气怎么样", compactionConfig)
       expect(score).toBeLessThan(0.5)
     })
 
     test("boosts relevance for recall intent with keyword match", () => {
       const topic = createTopic()
-      const score = computeRelevance(topic, "之前那个排序函数怎么写的", {})
+      const score = computeRelevance(topic, "之前那个排序函数怎么写的", compactionConfig)
       expect(score).toBeGreaterThan(0.6)
     })
 
@@ -272,38 +312,38 @@ describe("context-compressor.relevance", () => {
         updatedAt: Date.now() - 3600000, // 1 hour ago
       })
 
-      const oldScore = computeRelevance(oldTopic, "排序", {})
-      const newScore = computeRelevance(newTopic, "排序", {})
+      const oldScore = computeRelevance(oldTopic, "排序", compactionConfig)
+      const newScore = computeRelevance(newTopic, "排序", compactionConfig)
 
       expect(newScore).toBeGreaterThan(oldScore)
     })
 
     test("returns neutral score for empty query", () => {
       const topic = createTopic()
-      const score = computeRelevance(topic, "", {})
+      const score = computeRelevance(topic, "", compactionConfig)
       expect(score).toBeCloseTo(0.3, 1)
     })
   })
 
   describe("relevanceToLevel", () => {
     test("returns full for score >= 0.7", () => {
-      expect(relevanceToLevel(0.8, {})).toBe("full")
-      expect(relevanceToLevel(0.7, {})).toBe("full")
+      expect(relevanceToLevel(0.8, compactionConfig)).toBe("full")
+      expect(relevanceToLevel(0.7, compactionConfig)).toBe("full")
     })
 
     test("returns summary for score 0.3-0.7", () => {
-      expect(relevanceToLevel(0.5, {})).toBe("summary")
-      expect(relevanceToLevel(0.3, {})).toBe("summary")
+      expect(relevanceToLevel(0.5, compactionConfig)).toBe("summary")
+      expect(relevanceToLevel(0.3, compactionConfig)).toBe("summary")
     })
 
     test("returns title for score 0.1-0.3", () => {
-      expect(relevanceToLevel(0.2, {})).toBe("title")
-      expect(relevanceToLevel(0.1, {})).toBe("title")
+      expect(relevanceToLevel(0.2, compactionConfig)).toBe("title")
+      expect(relevanceToLevel(0.1, compactionConfig)).toBe("title")
     })
 
     test("returns hidden for score < 0.1", () => {
-      expect(relevanceToLevel(0.05, {})).toBe("hidden")
-      expect(relevanceToLevel(0, {})).toBe("hidden")
+      expect(relevanceToLevel(0.05, compactionConfig)).toBe("hidden")
+      expect(relevanceToLevel(0, compactionConfig)).toBe("hidden")
     })
   })
 })

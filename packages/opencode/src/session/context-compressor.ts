@@ -201,9 +201,7 @@ export namespace TopicGrouper {
     if (matchAny(text, TOPIC_BOUNDARY_PATTERNS)) return true
 
     // New requirement after a final_result in the current group
-    const semType = turn.parts.find(
-      (p): p is MessageV2.TextPart => p.type === "text" && p.sem_type,
-    )?.sem_type
+    const semType = turn.parts.find((p): p is MessageV2.TextPart => p.type === "text" && Boolean(p.sem_type))?.sem_type
 
     if (semType === "requirement") {
       const lastAssistant = [...current].reverse().find(
@@ -347,7 +345,7 @@ export function computeRelevance(
   } else {
     // Fallback: substring match on title/requirement
     const qLower = query.toLowerCase()
-    const title = "title" in topic ? topic.title : topic.title
+    const title = topic.title
     const requirement = "requirement" in topic ? topic.requirement : ""
 
     for (const kw of topicKw) {
@@ -638,7 +636,7 @@ export namespace ContextAssembler {
       const lastTextPart = turn.parts.find(
         (p): p is MessageV2.TextPart => p.type === "text",
       )
-      prevSem = lastTextPart?.sem_type
+      prevSem = lastTextPart?.sem_type as SemType | undefined
     }
 
     return turns
@@ -652,13 +650,14 @@ export namespace ContextAssembler {
   export function autoArchive(
     turns: MessageV2.WithParts[],
     threshold: number = 30,
+    config?: Config.Info["compaction"],
   ): { remaining: MessageV2.WithParts[]; archived: ArchivedTopicData[] } {
     if (turns.length < threshold) {
       return { remaining: turns, archived: [] }
     }
 
     const classified = classifyTurns(turns)
-    const maxGapTurns = Config.getSync?.()?.compaction?.max_gap_turns ?? 6
+    const maxGapTurns = config?.max_gap_turns ?? 6
     const topics = TopicGrouper.group(classified, maxGapTurns)
 
     if (topics.length <= 1) {
@@ -781,7 +780,7 @@ export namespace ContextAssembler {
       final_result_preview: topic.final_result_preview,
       lessons: topic.lessons,
       turns_count: topic.turns.length,
-      status: topic.status,
+      status: topic.status === "recalled" ? "recalled" : "cold",
       expanded: false,
       created_at: topic.createdAt,
       updated_at: topic.updatedAt,
@@ -824,7 +823,7 @@ export namespace ContextAssembler {
       return { shouldArchive: false, remaining: turns, archived: [] }
     }
 
-    const result = autoArchive(turns, config?.archive_threshold)
+    const result = autoArchive(turns, config?.archive_threshold, config)
     return {
       shouldArchive: true,
       remaining: result.remaining,

@@ -395,7 +395,7 @@ export namespace Session {
 
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Session") {}
 
-  type Patch = z.input<typeof Event.Updated.schema>["info"] & {
+  type Patch = z.output<typeof Event.Updated.schema>["info"] & {
     archive_topics?: ArchivedTopicData[]
     global_summary?: string
   }

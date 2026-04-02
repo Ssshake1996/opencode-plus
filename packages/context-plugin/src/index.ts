@@ -1,4 +1,5 @@
-import type { Hooks, Part, Plugin } from "@opencode-ai/plugin"
+import type { Hooks, Plugin } from "@opencode-ai/plugin"
+import type { Part } from "@opencode-ai/sdk"
 import {
   classifyTurns,
   compressToolResult,
@@ -8,7 +9,7 @@ import {
   relevanceToLevel,
   type CompressionLevel,
   type Turn,
-} from "../../context-core/src/index.ts"
+} from "@ssshake/context-core"
 
 type ContextCompressionOptions = {
   enabled?: boolean

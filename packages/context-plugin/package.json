@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@opencode-ai/plugin": "workspace:*",
+    "@opencode-ai/sdk": "workspace:*",
     "@ssshake/context-core": "workspace:*"
   },
   "devDependencies": {
