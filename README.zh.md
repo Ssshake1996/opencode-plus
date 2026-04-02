@@ -115,6 +115,44 @@ OpenCode 内置两种 Agent，可用 `Tab` 键快速切换：
 
 更多配置说明请查看我们的 [**官方文档**](https://opencode.ai/docs)。
 
+### 上下文压缩配置
+
+这个 fork 已经在项目级通过 [`.opencode/opencode.jsonc`](./.opencode/opencode.jsonc) 启用了上下文压缩插件。
+
+当前配置会加载 [`packages/context-plugin/src/index.ts`](./packages/context-plugin/src/index.ts)，默认参数如下：
+
+```json
+{
+  "plugin": [
+    [
+      "../packages/context-plugin/src/index.ts",
+      {
+        "toolResultMaxTokens": 1200,
+        "minMessages": 10,
+        "replaceCompactionPrompt": true
+      }
+    ]
+  ]
+}
+```
+
+这套配置当前会做三件事：
+
+- 在工具输出写回会话前先压缩大结果
+- 在组装 prompt 前按 topic 对较早消息做保守裁剪
+- 用上下文压缩版 continuation summary 模板替换默认 compaction prompt
+
+你仍然需要自己配置的是模型侧凭证，而不是这个插件本身：
+
+- 如果继续使用内置 `opencode` provider，按 OpenCode 的常规方式完成认证
+- 如果改用 `openai`、`anthropic` 或其他 provider，就修改 [`.opencode/opencode.jsonc`](./.opencode/opencode.jsonc) 里的 `provider` 配置，并设置对应 API Key 环境变量
+
+需要调压缩强度时，直接改 [`.opencode/opencode.jsonc`](./.opencode/opencode.jsonc) 里的这几个参数：
+
+- `toolResultMaxTokens`：单次工具结果压缩后的最大体量
+- `minMessages`：会话达到多少条消息后开始压缩历史消息
+- `replaceCompactionPrompt`：是否替换 OpenCode 默认的 continuation compaction prompt
+
 ### 参与贡献
 
 如有兴趣贡献代码，请在提交 PR 前阅读 [贡献指南 (Contributing Docs)](./CONTRIBUTING.md)。

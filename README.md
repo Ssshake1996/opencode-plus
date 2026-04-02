@@ -116,6 +116,45 @@ Learn more about [agents](https://opencode.ai/docs/agents).
 
 For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
 
+### Context Compression
+
+This fork ships with the context compression plugin enabled at the project level via [`.opencode/opencode.jsonc`](./.opencode/opencode.jsonc).
+
+The current project config loads [`packages/context-plugin/src/index.ts`](./packages/context-plugin/src/index.ts) with these defaults:
+
+```json
+{
+  "plugin": [
+    [
+      "../packages/context-plugin/src/index.ts",
+      {
+        "toolResultMaxTokens": 1200,
+        "minMessages": 10,
+        "replaceCompactionPrompt": true
+      }
+    ]
+  ]
+}
+```
+
+What this gives you:
+
+- compresses large tool outputs before they are persisted
+- applies topic-aware trimming to older messages before prompt assembly
+- replaces the continuation compaction prompt with the context-compression summary template
+
+What you still need to configure:
+
+- model/provider credentials for normal OpenCode usage
+- if you use the built-in `opencode` provider, authenticate the same way you normally would for OpenCode
+- if you use `openai`, `anthropic`, or another provider, update the `provider` block in [`.opencode/opencode.jsonc`](./.opencode/opencode.jsonc) and set the corresponding API key environment variables
+
+Tuning knobs live in [`.opencode/opencode.jsonc`](./.opencode/opencode.jsonc):
+
+- `toolResultMaxTokens`: maximum size of an individual tool result after compression
+- `minMessages`: minimum conversation length before historical message compression kicks in
+- `replaceCompactionPrompt`: whether to replace OpenCode's default continuation compaction prompt
+
 ### Contributing
 
 If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
