@@ -682,11 +682,12 @@ export namespace SessionPrompt {
 
       // Build system prompt, adding structured output instruction if needed
       const skills = await SystemPrompt.skills(agent)
+      const currentQuery = lastUser.parts?.find((p) => p.type === "text")?.text ?? ""
 
       // Add compressed context for long conversations
       const compressedContext = await Session.getContextForPrompt({
         sessionID,
-        currentQuery: lastUser.parts.find((p) => p.type === "text")?.text ?? "",
+        currentQuery,
       })
 
       const system = [

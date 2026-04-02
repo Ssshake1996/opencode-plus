@@ -82,6 +82,30 @@ export namespace Database {
     return sql.sort((a, b) => a.timestamp - b.timestamp)
   }
 
+  function ensureSessionContextColumns(db: ReturnType<typeof init>) {
+    const client = db.$client
+    const hasSessionTable = client
+      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'")
+      .get()
+    if (!hasSessionTable) return
+
+    const columns = client
+      .query<{ name: string }>("PRAGMA table_info(session)")
+      .all()
+      .map((row) => row.name)
+    const names = new Set(columns)
+
+    if (!names.has("archive_topics")) {
+      log.info("repairing session schema", { column: "archive_topics" })
+      client.run("ALTER TABLE session ADD COLUMN archive_topics TEXT")
+    }
+
+    if (!names.has("global_summary")) {
+      log.info("repairing session schema", { column: "global_summary" })
+      client.run("ALTER TABLE session ADD COLUMN global_summary TEXT")
+    }
+  }
+
   export const Client = lazy(() => {
     log.info("opening database", { path: Path })
 
@@ -111,6 +135,8 @@ export namespace Database {
       }
       migrate(db, entries)
     }
+
+    ensureSessionContextColumns(db)
 
     return db
   })
