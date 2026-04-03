@@ -800,6 +800,7 @@ export namespace Session {
     z.object({
       sessionID: SessionID.zod,
       currentQuery: z.string(),
+      modelInputTokens: z.number().optional(),
       maxChars: z.number().optional(),
     }),
     async (input) => {
@@ -809,15 +810,24 @@ export namespace Session {
       const session = await get(input.sessionID)
       const archivedTopics = session.archive_topics ?? []
       const globalSummary = session.global_summary
+      const cfg = await Config.get()
 
       const { ContextAssembler } = await import("./context-compressor")
 
+      const promptTurns = ContextAssembler.selectPromptTurns(
+        messages,
+        archivedTopics,
+        cfg.compaction,
+        input.maxChars ?? ContextAssembler.resolveContextBudget(cfg.compaction, input.modelInputTokens),
+      )
+
       return ContextAssembler.assemble({
-        turns: messages,
+        turns: promptTurns,
         currentQuery: input.currentQuery,
         archivedTopics,
         globalSummary,
-        maxChars: input.maxChars,
+        maxChars: input.maxChars ?? ContextAssembler.resolveContextBudget(cfg.compaction, input.modelInputTokens),
+        config: cfg.compaction,
       })
     },
   )

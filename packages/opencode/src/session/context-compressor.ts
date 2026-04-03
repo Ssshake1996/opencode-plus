@@ -494,6 +494,15 @@ export namespace ContextAssembler {
     archivedTopics: ArchivedTopicData[]
     globalSummary?: string
     maxChars?: number
+    config?: Config.Info["compaction"]
+  }
+
+  export interface AssembleArchivedInput {
+    archivedTopics: ArchivedTopicData[]
+    currentQuery: string
+    globalSummary?: string
+    maxChars?: number
+    config?: Config.Info["compaction"]
   }
 
   /**
@@ -507,8 +516,8 @@ export namespace ContextAssembler {
    * 5. Assemble within budget
    */
   export function assemble(input: AssembleInput): string {
-    const cfg: Config.Info["compaction"] = {} as any
-    const maxChars = input.maxChars ?? cfg?.context_max_chars ?? 8000
+    const cfg = input.config ?? ({} as Config.Info["compaction"])
+    const maxChars = input.maxChars ?? resolveContextBudget(cfg)
 
     // Step 1: Classify turns
     const turns = classifyTurns(input.turns)
@@ -613,6 +622,60 @@ export namespace ContextAssembler {
     return parts.join("\n\n")
   }
 
+  export function assembleArchivedContext(input: AssembleArchivedInput): string {
+    const cfg = input.config ?? ({} as Config.Info["compaction"])
+    const maxChars = input.maxChars ?? Math.max(1200, Math.floor(resolveContextBudget(cfg) * 0.45))
+    if (!input.archivedTopics.length) {
+      return input.globalSummary ? `[Earlier summary: ${input.globalSummary.slice(0, 300)}]` : ""
+    }
+
+    const scored = input.archivedTopics
+      .map((topic) => {
+        const score = topic.status === "recalled" ? 1 : computeRelevance(topic, input.currentQuery, cfg)
+        return {
+          topic,
+          score,
+          level: topic.status === "recalled" ? ("full" as const) : relevanceToLevel(score, cfg),
+        }
+      })
+      .filter((item) => item.level !== "hidden" || item.topic.status === "recalled")
+      .sort((a, b) => {
+        if (a.topic.status === "recalled" && b.topic.status !== "recalled") return -1
+        if (a.topic.status !== "recalled" && b.topic.status === "recalled") return 1
+        return b.score - a.score || b.topic.updated_at - a.topic.updated_at
+      })
+
+    const parts: string[] = []
+    let budget = maxChars
+
+    if (input.globalSummary) {
+      const summaryText = `[Earlier summary: ${input.globalSummary.slice(0, 300)}]`
+      if (summaryText.length <= budget) {
+        parts.push(summaryText)
+        budget -= summaryText.length
+      }
+    }
+
+    for (const item of scored) {
+      const candidates: CompressionLevel[] =
+        item.topic.status === "recalled" ? ["full", "summary", "title"] : [item.level, "summary", "title"]
+
+      for (const candidate of candidates) {
+        const text = SmartCompressor.compress(item.topic, candidate)
+        if (!text) break
+        if (text.length <= budget || candidate === "title") {
+          parts.push(text)
+          budget -= Math.min(text.length, budget)
+          break
+        }
+      }
+
+      if (budget <= 0) break
+    }
+
+    return parts.join("\n\n")
+  }
+
   function classifyTurns(
     turns: MessageV2.WithParts[],
   ): MessageV2.WithParts[] {
@@ -709,6 +772,89 @@ export namespace ContextAssembler {
     return recalled
   }
 
+  export function mergeArchivedTopics(
+    existing: ArchivedTopicData[] = [],
+    incoming: ArchivedTopicData[] = [],
+  ): ArchivedTopicData[] {
+    const merged = new Map<string, ArchivedTopicData>()
+
+    for (const topic of existing) {
+      merged.set(topic.id, structuredClone(topic))
+    }
+
+    for (const topic of incoming) {
+      const current = merged.get(topic.id)
+      if (!current) {
+        merged.set(topic.id, structuredClone(topic))
+        continue
+      }
+
+      merged.set(topic.id, {
+        ...current,
+        ...structuredClone(topic),
+        status:
+          current.status === "recalled" || topic.status === "recalled"
+            ? "recalled"
+            : topic.status,
+        updated_at: Math.max(current.updated_at, topic.updated_at),
+        created_at: Math.min(current.created_at, topic.created_at),
+      })
+    }
+
+    return [...merged.values()].sort((a, b) => a.updated_at - b.updated_at)
+  }
+
+  export function resolveContextBudget(
+    config?: Config.Info["compaction"],
+    modelInputTokens?: number,
+  ): number {
+    if (config?.context_max_chars && config.context_max_chars > 0) {
+      return config.context_max_chars
+    }
+
+    if (modelInputTokens && modelInputTokens > 0) {
+      return Math.max(4000, Math.floor(modelInputTokens * 0.5 * 4))
+    }
+
+    return 8000
+  }
+
+  export function selectPromptTurns(
+    turns: MessageV2.WithParts[],
+    archivedTopics: ArchivedTopicData[] = [],
+    config?: Config.Info["compaction"],
+    maxChars?: number,
+  ): MessageV2.WithParts[] {
+    if (!turns.length) return []
+
+    const cfg = config ?? ({} as Config.Info["compaction"])
+    const classified = classifyTurns([...turns])
+    const topics = TopicGrouper.group(classified, cfg?.max_gap_turns ?? 6)
+    const keepTopics = archivedTopics.length > 0 ? 1 : 2
+    const topicSlice = topics.slice(-keepTopics)
+    const selected = topicSlice.length > 0 ? topicSlice.flatMap((topic) => topic.turns) : classified
+
+    const hardCap = cfg?.hard_cap_turns ?? 50
+    const capped = selected.slice(-hardCap)
+    const totalBudget = maxChars ?? resolveContextBudget(cfg)
+    const recentBudget = archivedTopics.length > 0 ? Math.max(1500, Math.floor(totalBudget * 0.55)) : totalBudget
+
+    let totalChars = capped.reduce((sum, turn) => sum + estimateTurnChars(turn), 0)
+    if (totalChars <= recentBudget) return capped
+
+    const result: MessageV2.WithParts[] = []
+    for (let i = capped.length - 1; i >= 0; i--) {
+      const turn = capped[i]!
+      result.unshift(turn)
+      totalChars -= estimateTurnChars(turn)
+      if (result.length >= 2 && totalChars <= recentBudget) {
+        return result
+      }
+    }
+
+    return capped.slice(-2)
+  }
+
   /**
    * List all topics (hot + archived) with their status
    */
@@ -785,6 +931,24 @@ export namespace ContextAssembler {
       created_at: topic.createdAt,
       updated_at: topic.updatedAt,
     }
+  }
+
+  function estimateTurnChars(turn: MessageV2.WithParts): number {
+    let total = 0
+    for (const part of turn.parts) {
+      if (part.type === "text") {
+        total += part.text.length
+        continue
+      }
+      if (part.type === "tool" && part.state.status === "completed") {
+        total += part.state.output.length
+        continue
+      }
+      if (part.type === "file") {
+        total += (part.filename ?? part.url).length
+      }
+    }
+    return Math.max(1, total)
   }
 
   /**

@@ -510,6 +510,35 @@ describe("context-compressor.ContextAssembler", () => {
     })
   })
 
+  describe("assembleArchivedContext", () => {
+    test("builds archived-only context without hot turns", () => {
+      const archived: ArchivedTopicData[] = [
+        {
+          id: "archived1",
+          title: "Old sorting topic",
+          keywords: ["sorting", "python"],
+          summary: "Previous discussion about sorting",
+          requirement: "Implement sorting in Python",
+          final_result_preview: "def sort(values): ...",
+          lessons: "",
+          turns_count: 4,
+          status: "cold",
+          created_at: Date.now() - 7200000,
+          updated_at: Date.now() - 3600000,
+        },
+      ]
+
+      const result = ContextAssembler.assembleArchivedContext({
+        archivedTopics: archived,
+        currentQuery: "sorting python",
+        config: compactionConfig,
+      })
+
+      expect(result).toContain("Old sorting topic")
+      expect(result).toContain("Requirement:")
+    })
+  })
+
   describe("autoArchive", () => {
     test("returns original turns when below threshold", () => {
       const turns = [createTurn("user", "test")]
@@ -590,6 +619,82 @@ describe("context-compressor.ContextAssembler", () => {
       const result = ContextAssembler.recallTopic(archived, "今天的天气")
       const recalled = result.filter((t) => t.status === "recalled")
       expect(recalled.length).toBe(0)
+    })
+  })
+
+  describe("mergeArchivedTopics", () => {
+    test("deduplicates by id and keeps recalled state", () => {
+      const merged = ContextAssembler.mergeArchivedTopics(
+        [
+          {
+            id: "t1",
+            title: "Topic A",
+            keywords: ["a"],
+            summary: "",
+            requirement: "old",
+            final_result_preview: "",
+            lessons: "",
+            turns_count: 3,
+            status: "recalled",
+            created_at: 10,
+            updated_at: 20,
+          },
+        ],
+        [
+          {
+            id: "t1",
+            title: "Topic A",
+            keywords: ["a", "b"],
+            summary: "updated",
+            requirement: "new",
+            final_result_preview: "done",
+            lessons: "",
+            turns_count: 5,
+            status: "cold",
+            created_at: 5,
+            updated_at: 30,
+          },
+        ],
+      )
+
+      expect(merged).toHaveLength(1)
+      expect(merged[0].status).toBe("recalled")
+      expect(merged[0].updated_at).toBe(30)
+      expect(merged[0].created_at).toBe(5)
+    })
+  })
+
+  describe("selectPromptTurns", () => {
+    test("keeps only latest topic when archived topics exist", () => {
+      const turns = [
+        createTurn("user", "First topic request", "requirement"),
+        createTurn("assistant", "first result", "final_result"),
+        createTurn("user", "Second topic request", "requirement"),
+        createTurn("assistant", "second result", "final_result"),
+      ]
+      const selected = ContextAssembler.selectPromptTurns(
+        turns,
+        [
+          {
+            id: "old",
+            title: "Older topic",
+            keywords: ["old"],
+            summary: "",
+            requirement: "older",
+            final_result_preview: "",
+            lessons: "",
+            turns_count: 2,
+            status: "cold",
+            created_at: Date.now() - 7200000,
+            updated_at: Date.now() - 3600000,
+          },
+        ],
+        compactionConfig,
+      )
+
+      const text = selected.flatMap((turn) => turn.parts).map((part) => ("text" in part ? part.text : "")).join(" ")
+      expect(text).toContain("Second topic request")
+      expect(text).not.toContain("First topic request")
     })
   })
 

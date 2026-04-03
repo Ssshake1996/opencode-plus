@@ -678,22 +678,66 @@ export namespace SessionPrompt {
         }
       }
 
-      await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+      const currentQuery = lastUserMsg?.parts.find((p): p is MessageV2.TextPart => p.type === "text")?.text ?? ""
+      const cfg = await Config.get()
+      const sessionState = await Session.get(sessionID)
+      const contextBudget = ContextAssembler.resolveContextBudget(
+        cfg.compaction,
+        model.limit.input || model.limit.context,
+      )
+      let archivedTopics = structuredClone(sessionState.archive_topics ?? [])
+      let promptMessages = structuredClone(msgs)
+      let archiveTopicsChanged = false
+
+      if (cfg.compaction?.auto) {
+        const { shouldArchive, remaining, archived } = ContextAssembler.autoArchiveIfNeeded(
+          promptMessages,
+          archivedTopics,
+          cfg.compaction,
+        )
+
+        if (shouldArchive && archived.length > 0) {
+          archivedTopics = ContextAssembler.mergeArchivedTopics(archivedTopics, archived)
+          promptMessages = remaining
+          archiveTopicsChanged = true
+          log.info("Auto-archived topics for prompt", { count: archived.length, sessionID })
+        }
+      }
+
+      const recalledTopics = ContextAssembler.recallTopic(archivedTopics, currentQuery)
+      if (recalledTopics.length > 0) {
+        archiveTopicsChanged = true
+      }
+      if (archiveTopicsChanged) {
+        await Session.setArchiveTopics({
+          sessionID,
+          archiveTopics: archivedTopics,
+        })
+      }
+
+      promptMessages = ContextAssembler.selectPromptTurns(
+        promptMessages,
+        archivedTopics,
+        cfg.compaction,
+        contextBudget,
+      )
+
+      await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: promptMessages })
 
       // Build system prompt, adding structured output instruction if needed
       const skills = await SystemPrompt.skills(agent)
-      const currentQuery = lastUserMsg?.parts.find((p): p is MessageV2.TextPart => p.type === "text")?.text ?? ""
-
-      // Add compressed context for long conversations
-      const compressedContext = await Session.getContextForPrompt({
-        sessionID,
+      const archivedContext = ContextAssembler.assembleArchivedContext({
+        archivedTopics,
         currentQuery,
+        globalSummary: sessionState.global_summary,
+        maxChars: Math.max(1200, Math.floor(contextBudget * 0.45)),
+        config: cfg.compaction,
       })
 
       const system = [
         ...(await SystemPrompt.environment(model)),
         ...(skills ? [skills] : []),
-        ...(compressedContext ? [`<compressed-context>\n${compressedContext}\n</compressed-context>`] : []),
+        ...(archivedContext ? [`<archived-context>\n${archivedContext}\n</archived-context>`] : []),
         ...(await InstructionPrompt.system()),
       ]
       const format = lastUser.format ?? { type: "text" }
@@ -704,12 +748,12 @@ export namespace SessionPrompt {
       const result = await processor.process({
         user: lastUser,
         agent,
-        permission: session.permission,
+        permission: sessionState.permission ?? session.permission,
         abort,
         sessionID,
         system,
         messages: [
-          ...(await MessageV2.toModelMessages(msgs, model)),
+          ...(await MessageV2.toModelMessages(promptMessages, model)),
           ...(isLastStep
             ? [
                 {
@@ -778,7 +822,7 @@ export namespace SessionPrompt {
       if (shouldArchive && archived.length > 0) {
         await Session.setArchiveTopics({
           sessionID,
-          archiveTopics: [...archivedTopics, ...archived],
+          archiveTopics: ContextAssembler.mergeArchivedTopics(archivedTopics, archived),
         })
         log.info("Auto-archived topics", { count: archived.length, sessionID })
       }
