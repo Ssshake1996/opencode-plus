@@ -709,9 +709,17 @@ export namespace SessionPrompt {
         archiveTopicsChanged = true
       }
       if (archiveTopicsChanged) {
+        const globalSummary = ContextAssembler.buildGlobalSummary(
+          archivedTopics,
+          Math.max(600, Math.floor(contextBudget * 0.2)),
+        )
         await Session.setArchiveTopics({
           sessionID,
           archiveTopics: archivedTopics,
+        })
+        await Session.setGlobalSummary({
+          sessionID,
+          globalSummary,
         })
       }
 
@@ -820,9 +828,14 @@ export namespace SessionPrompt {
       )
 
       if (shouldArchive && archived.length > 0) {
+        const mergedTopics = ContextAssembler.mergeArchivedTopics(archivedTopics, archived)
         await Session.setArchiveTopics({
           sessionID,
-          archiveTopics: ContextAssembler.mergeArchivedTopics(archivedTopics, archived),
+          archiveTopics: mergedTopics,
+        })
+        await Session.setGlobalSummary({
+          sessionID,
+          globalSummary: ContextAssembler.buildGlobalSummary(mergedTopics),
         })
         log.info("Auto-archived topics", { count: archived.length, sessionID })
       }

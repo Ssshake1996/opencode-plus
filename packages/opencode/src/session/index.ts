@@ -809,10 +809,10 @@ export namespace Session {
       )
       const session = await get(input.sessionID)
       const archivedTopics = session.archive_topics ?? []
-      const globalSummary = session.global_summary
       const cfg = await Config.get()
 
       const { ContextAssembler } = await import("./context-compressor")
+      const globalSummary = session.global_summary || ContextAssembler.buildGlobalSummary(archivedTopics)
 
       const promptTurns = ContextAssembler.selectPromptTurns(
         messages,

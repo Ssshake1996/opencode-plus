@@ -664,6 +664,43 @@ describe("context-compressor.ContextAssembler", () => {
     })
   })
 
+  describe("buildGlobalSummary", () => {
+    test("builds a compact summary from archived topics", () => {
+      const summary = ContextAssembler.buildGlobalSummary([
+        {
+          id: "t1",
+          title: "Sorting topic",
+          keywords: ["sorting"],
+          summary: "",
+          requirement: "Implement a sorting function",
+          final_result_preview: "def sort(values): ...",
+          lessons: "",
+          turns_count: 4,
+          status: "cold",
+          created_at: 10,
+          updated_at: 20,
+        },
+        {
+          id: "t2",
+          title: "Search topic",
+          keywords: ["search"],
+          summary: "",
+          requirement: "Implement binary search",
+          final_result_preview: "def search(values): ...",
+          lessons: "",
+          turns_count: 3,
+          status: "recalled",
+          created_at: 30,
+          updated_at: 40,
+        },
+      ])
+
+      expect(summary).toContain("Archived topics: 2")
+      expect(summary).toContain("[recalled] Search topic")
+      expect(summary).toContain("Sorting topic")
+    })
+  })
+
   describe("selectPromptTurns", () => {
     test("keeps only latest topic when archived topics exist", () => {
       const turns = [

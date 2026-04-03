@@ -676,6 +676,39 @@ export namespace ContextAssembler {
     return parts.join("\n\n")
   }
 
+  export function buildGlobalSummary(
+    archivedTopics: ArchivedTopicData[] = [],
+    maxChars = 1200,
+  ): string {
+    if (!archivedTopics.length) return ""
+
+    const ordered = [...archivedTopics].sort((a, b) => {
+      if (a.status === "recalled" && b.status !== "recalled") return -1
+      if (a.status !== "recalled" && b.status === "recalled") return 1
+      return b.updated_at - a.updated_at
+    })
+
+    const parts: string[] = [`Archived topics: ${archivedTopics.length}`]
+    let budget = maxChars - parts[0].length
+
+    for (const topic of ordered) {
+      const line = [
+        topic.status === "recalled" ? "[recalled]" : "[archived]",
+        topic.title || "Untitled topic",
+        "::",
+        topic.requirement || topic.summary || topic.final_result_preview || `${topic.turns_count} turns`,
+      ]
+        .join(" ")
+        .slice(0, 220)
+
+      if (line.length + 2 > budget) break
+      parts.push(`- ${line}`)
+      budget -= line.length + 2
+    }
+
+    return parts.join("\n")
+  }
+
   function classifyTurns(
     turns: MessageV2.WithParts[],
   ): MessageV2.WithParts[] {
